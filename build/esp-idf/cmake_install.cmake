@@ -113,6 +113,7 @@ if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   include("C:/Users/mato2/FEI/ESP_Kod/DiaCleaner/build/esp-idf/wifi_provisioning/cmake_install.cmake")
   include("C:/Users/mato2/FEI/ESP_Kod/DiaCleaner/build/esp-idf/esp32-mcp23008-master/cmake_install.cmake")
   include("C:/Users/mato2/FEI/ESP_Kod/DiaCleaner/build/esp-idf/mcp23009/cmake_install.cmake")
+  include("C:/Users/mato2/FEI/ESP_Kod/DiaCleaner/build/esp-idf/pwmOut/cmake_install.cmake")
   include("C:/Users/mato2/FEI/ESP_Kod/DiaCleaner/build/esp-idf/main/cmake_install.cmake")
 
 endif()
