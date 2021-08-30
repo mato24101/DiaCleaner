@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -8,50 +7,88 @@
 #include "driver/i2c.h"
 #include "mcp23009.h"
 #include "driver/timer.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 /* Can use project configuration menu (idf.py menuconfig) to choose the GPIO to blink,
    or you can edit the following line and set a number here.
 */
+//LED
 #define LED_GPIO (gpio_num_t)2
+#define LED_blink_time 1 //s
 #define OnOff_BDD1 15
 #define OnOff_BDD2 13
 
-#define MCP_SET_BIT(x) mcp23008_write_port(&conf, conf.current |= (1 << x));
-#define MCP_CLR_BIT(x) mcp23008_write_port(&conf, conf.current &= ~(1 << x)); //conf.current & (0 << x)
+//System
+#define S_TO_MS 1000
+#define S_TO_US 1000000
+#define POSITIVE true
+#define NEGATIVE false
+
+//I2C config
+#define SDA_GPIO GPIO_NUM_21
+#define SCL_GPIO GPIO_NUM_22
+#define PORT 0
+
+//BDD1 config
+#define BDD1_MTIME 2      //s   //measure
+#define BDD1_POLTIME 2    //s   //polarity
+#define BDD1_DC 0         //*100%
+#define BDD1_PWM_FREQ 100 //Hz
+#define BDD1_POL_GPIO 4
+#define BDD1_DEFAULT_POL NEGATIVE
+
+//BDD2 config
+#define BDD2_MTIME 2      //s   //measure
+#define BDD2_POLTIME 1    //s   //polarity
+#define BDD2_DC 0         //*100%
+#define BDD2_PWM_FREQ 100 //Hz
+#define BDD2_POL_GPIO 5
+#define BDD2_DEFAULT_POL NEGATIVE
+
+//static int64_t lastMeasure = 0;
+static int64_t lastPol_BDD1 = 0;
+static int64_t lastPol_BDD2 = 0;
+static int64_t lastLED_state = 0;
+static bool polarity_BDD1 = BDD1_DEFAULT_POL;
+static bool polarity_BDD2 = BDD2_DEFAULT_POL;
+static bool LED_state = 0;
 
 mcp23009 mcp; //initialize mcp object
-
-TaskHandle_t task = NULL;
-
-static bool ISR(void *)
-{
-    BaseType_t taskWoken;
-    xTaskGenericNotifyFromISR(task, 1, eSetValueWithOverwrite, 0, &taskWoken);
-    portYIELD_FROM_ISR(taskWoken);
-    return true;
-}
-/*
-void taskk(void *)
-{
-    while (1)
+void Blink()
+{   
+    if ((esp_timer_get_time() - lastLED_state) >= (LED_blink_time * S_TO_US))
     {
-        ulTaskNotifyTake(pdTRUE, 100);
-        //mcp.setBit(M_GPIO,0);
-        printf("Turning ON the LED\n");
-        //gpio_set_level(LED_GPIO, 1);
-        ulTaskNotifyTake(pdTRUE, 100);
-        //mcp.clrBit(M_GPIO, 0);
-        printf("Turning OFF the LED\n");
-       // gpio_set_level(LED_GPIO, 0);
+    LED_state = !LED_state;
+    gpio_set_level(LED_GPIO, LED_state);
+    lastLED_state = esp_timer_get_time();
     }
 }
-*/
+
+void polTime_BDD1()
+{
+    if ((esp_timer_get_time() - lastPol_BDD1) >= (BDD1_POLTIME * S_TO_US))
+    {
+        polarity_BDD1 = !polarity_BDD1;
+        mcp.digitalWrite(BDD1_POL_GPIO, polarity_BDD1);
+        printf("BBD1 set to %d\n", polarity_BDD1);
+        lastPol_BDD1 = esp_timer_get_time();
+    } //if ((esp_timer_get_time() - lastPol) >= (BDD_POLTIME * S_TO_US))
+} //polTime
+
+void polTime_BDD2()
+{
+    if ((esp_timer_get_time() - lastPol_BDD2) >= (BDD2_POLTIME * S_TO_US))
+    {
+        polarity_BDD2 = !polarity_BDD2;
+        mcp.digitalWrite(BDD2_POL_GPIO, polarity_BDD2);
+        printf("BBD2 set to %d\n", polarity_BDD2);
+        lastPol_BDD2 = esp_timer_get_time();
+    } //if ((esp_timer_get_time() - lastPol) >= (BDD_POLTIME * S_TO_US))
+} //polTime
+
 extern "C" void app_main(void)
 {
     gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
-    //config
+
     mcpxx9_conf_t mcp_conf = {
         .i2c_port = I2C_NUM_0,
         .i2c_conf = {
@@ -66,77 +103,33 @@ extern "C" void app_main(void)
 
     mcp_conf.i2c_conf.master.clk_speed = 100000; //clk speed
 
+    //polInit
     mcp.init(&mcp_conf); //initializes variables and reads all registers
-/*
-    timer_config_t tim_conf = {
-        .alarm_en = TIMER_ALARM_EN,
-        .counter_en = TIMER_PAUSE,
-        .intr_type = TIMER_INTR_LEVEL,
-        .counter_dir = TIMER_COUNT_UP,
-        .auto_reload = TIMER_AUTORELOAD_EN,
-        .divider = 80,
-    };
-
-    xTaskCreate(taskk, "Duty", 4096, NULL, 2, &task);
-    ESP_ERROR_CHECK(timer_init(TIMER_GROUP_0, TIMER_0, &tim_conf));
-    ESP_ERROR_CHECK(timer_set_alarm_value(TIMER_GROUP_0, TIMER_0, 100000));
-    timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0);
-    timer_isr_callback_add(TIMER_GROUP_0, TIMER_0, ISR, NULL, 0);
-    ESP_ERROR_CHECK(timer_start(TIMER_GROUP_0, TIMER_0));
-    */
-    //set whole GPIO port in one call
-    mcp.setDir(0xFF);
-
-    //read GPIO port state to variable val
-    uint8_t val;
-    mcp.getDir(&val);
-    ESP_LOGI("GPIOs", "0x%x", val);
-
-    //enable pullups
-    mcp.setPullup(0xFF);
-    //verify
-    mcp.getPullup(&val);
-    ESP_LOGI("PULLups", "0x%x", val);
-
-    //set just 3rd bit
-    //mcp.setBit(M_OLAT,3);
-    //mcp.clrBit(M_OLAT,3);
-
-    //arduino style gpio control, switch 2nd GPIO bit to 1
-    //mcp.digitalWrite(2,1);
-    mcp.setBit(M_GPIO, 4);
-    vTaskDelay(200 / portTICK_PERIOD_MS);
-    mcp.clrBit(M_GPIO, 4);
+    mcp.setDir(0x00);    //seting direction to output
+    mcp.setPullup(0xFF); //enable pullups
+    /*
     while (1)
     {
-        /* Blink off (output low) 
-        printf("Turning ON the LED\n");
-        gpio_set_level(LED_GPIO, 1);
-*/
-        mcp.setBit(M_GPIO, 0);
-        mcp.setBit(M_OLAT, 1);
-        mcp.setBit(M_OLAT, 2);
-        mcp.setBit(M_OLAT, 3);
-        mcp.setBit(M_OLAT, 4);
-        //mcp.setBit(M_GPIO, 5);
-        //mcp.setBit(M_GPIO, 6);
-        //mcp.setBit(M_GPIO, 7);
+        printf("BDD START\r\n");
+        mcp.digitalWrite(0,1);
+        printf("BBD set");
+        vTaskDelay(5000 / portTICK_RATE_MS);
 
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-        /*
-        printf("Turning OFF the LED\n");
-        gpio_set_level(LED_GPIO, 0);
-        */
-
-        mcp.clrBit(M_GPIO, 0);
-        mcp.clrBit(M_OLAT, 1);
-        mcp.clrBit(M_OLAT, 2);
-        mcp.clrBit(M_OLAT, 3);
-        mcp.clrBit(M_OLAT, 4);
-        //mcp.clrBit(M_GPIO, 5);
-        //mcp.clrBit(M_GPIO, 6);
-        //mcp.clrBit(M_GPIO, 7);
-
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        mcp.digitalWrite(0,0);
+        printf("BBD reset");
+        vTaskDelay(1000 / portTICK_RATE_MS);
     }
+    */
+
+    lastPol_BDD1 = esp_timer_get_time();
+    lastPol_BDD2 = esp_timer_get_time();
+
+    while (true)
+    {
+        //inaMeasure();
+        polTime_BDD1();
+        polTime_BDD2();
+        Blink();
+        vTaskDelay(100 / portTICK_RATE_MS);
+    } //while (true)
 }
