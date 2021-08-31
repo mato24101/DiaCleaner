@@ -12,10 +12,11 @@
    or you can edit the following line and set a number here.
 */
 //LED
-#define LED_GPIO (gpio_num_t)2
+#define LED_GPIO GPIO_NUM_2
 #define LED_blink_time 1 //s
-#define OnOff_BDD1 15
-#define OnOff_BDD2 13
+#define LED_PWM_FREQ 5000 //Hz
+#define BDD1_Duty GPIO_NUM_26
+#define BDD2_Duty 
 
 //System
 #define S_TO_MS 1000
@@ -29,21 +30,21 @@
 #define PORT 0
 
 //BDD1 config
-#define BDD1_MTIME 2     //s   //measure
-#define BDD1_POLTIME 2   //s   //polarity
-#define BDD1_DC 0.5      //*100%
-#define BDD1_PWM_FREQ 200 //Hz
+#define BDD1_MTIME 2      //s   //measure
+#define BDD1_POLTIME 2    //s   //polarity
+#define BDD1_DC 0.5       //x100%
+#define BDD1_PWM_FREQ 500 //Hz
 #define BDD1_POL_GPIO 4
-#define BDD1_DUTY_GPIO 6
+#define BDD1_DUTY_GPIO GPIO_NUM_26
 #define BDD1_DEFAULT_POL NEGATIVE
 
 //BDD2 config
 #define BDD2_MTIME 2     //s   //measure
 #define BDD2_POLTIME 1   //s   //polarity
-#define BDD2_DC 0.5      //*100%
-#define BDD2_PWM_FREQ 10 //Hz
+#define BDD2_DC 0.5      //x100%
+#define BDD2_PWM_FREQ 2000 //Hz
 #define BDD2_POL_GPIO 5
-#define BDD2_DUTY_GPIO 7
+#define BDD2_DUTY_GPIO GPIO_NUM_27
 #define BDD2_DEFAULT_POL NEGATIVE
 
 //static int64_t lastMeasure = 0;
@@ -60,12 +61,20 @@ static bool LED_state = 0;
 
 mcp23009 mcp; //initialize mcp object
 
+pwmOut pwm_BDD1(BDD1_DUTY_GPIO, LEDC_CHANNEL_0, LEDC_TIMER_0, BDD1_PWM_FREQ);
+pwmOut pwm_BDD2(BDD2_DUTY_GPIO, LEDC_CHANNEL_1, LEDC_TIMER_1, BDD2_PWM_FREQ);
+
+
 void Blink()
 {
+
     if ((esp_timer_get_time() - lastLED_state) >= (LED_blink_time * S_TO_US))
     {
         LED_state = !LED_state;
         gpio_set_level(LED_GPIO, LED_state);
+        printf("im OK %d\n", LED_state);
+        gpio_set_level(BDD1_DUTY_GPIO, LED_state);
+        gpio_set_level(BDD2_DUTY_GPIO, LED_state);
         lastLED_state = esp_timer_get_time();
     }
 }
@@ -91,35 +100,39 @@ void polTime_BDD2()
         lastPol_BDD2 = esp_timer_get_time();
     } //if ((esp_timer_get_time() - lastPol) >= (BDD_POLTIME * S_TO_US))
 } //polTime
-/*
-void Duty_BDD1()
-{
-    if ((esp_timer_get_time() - lastDuty_BDD1) >= ((1 / BDD1_PWM_FREQ) * S_TO_US))
-    {
-        Duty_polBDD1 = !Duty_polBDD1;
-        mcp.digitalWrite(BDD1_DUTY_GPIO, Duty_polBDD1);
-        //printf("BBD1 set to %d\n", polarity_BDD1);
-        lastDuty_BDD1 = esp_timer_get_time();
-    } //if ((esp_timer_get_time() - lastPol) >= (BDD_POLTIME * S_TO_US))
-} //polTime
 
-void Duty_BDD2()
+void Duty_FOR()
 {
-    if ((esp_timer_get_time() - lastDuty_BDD2) >= ((1 / BDD2_PWM_FREQ) * S_TO_US))
-    {
-        Duty_polBDD2 = !Duty_polBDD2;
-        mcp.digitalWrite(BDD2_DUTY_GPIO, Duty_polBDD2);
-        //printf("BBD1 set to %d\n", );
-        lastDuty_BDD2 = esp_timer_get_time();
-    } //if ((esp_timer_get_time() - lastPol) >= (BDD_POLTIME * S_TO_US))
-} //polTime
-*/
+    for (float i = 0.1; i <= 100; i=i+10)
+        {
+            float duty = i / 100;
+
+            pwm_BDD1.setDuty(duty);
+            pwm_BDD2.setDuty(duty);
+            //pwm_LED.setDuty(duty);
+            printf("pwmDuty %.2f\n", duty);
+            vTaskDelay(500 / portTICK_RATE_MS);
+            //pwm.pwmOut(LED_GPIO,0,10,BDD1_PWM_FREQ);
+        }
+}
+void PWM_Init()
+{
+    pwmOut pwm_BDD1(BDD1_DUTY_GPIO, LEDC_CHANNEL_0, LEDC_TIMER_0, BDD1_PWM_FREQ);
+    pwmOut pwm_BDD2(BDD2_DUTY_GPIO, LEDC_CHANNEL_1, LEDC_TIMER_1, BDD2_PWM_FREQ);
+}
+    
+
 extern "C" void app_main(void)
 {
     gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
-
-    pwmOut pwm(LED_GPIO, LEDC_CHANNEL_0, LEDC_TIMER_0, BDD1_PWM_FREQ);
-
+    gpio_set_direction(BDD1_DUTY_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_direction(BDD2_DUTY_GPIO, GPIO_MODE_OUTPUT);
+    //pwmOut pwm_LED(LED_GPIO, LEDC_CHANNEL_0, LEDC_TIMER_0, LED_PWM_FREQ);
+    //pwm_LED.setDuty(1);
+    PWM_Init();
+    //pwmOut pwm_BDD1(BDD1_DUTY_GPIO, LEDC_CHANNEL_0, LEDC_TIMER_0, BDD1_PWM_FREQ);
+    //pwmOut pwm_BDD2(BDD2_DUTY_GPIO, LEDC_CHANNEL_1, LEDC_TIMER_1, BDD2_PWM_FREQ);
+   
     mcpxx9_conf_t mcp_conf = {
         .i2c_port = I2C_NUM_0,
         .i2c_conf = {
@@ -135,9 +148,11 @@ extern "C" void app_main(void)
     mcp_conf.i2c_conf.master.clk_speed = 100000; //clk speed
 
     //polInit
-    mcp.init(&mcp_conf); //initializes variables and reads all registers
-    mcp.setDir(0x00);    //seting direction to output
-    mcp.setPullup(0xFF); //enable pullups
+    mcp.init(&mcp_conf);                               //initializes variables and reads all registers
+    mcp.setDir(0x00);                                  //seting direction to output
+    mcp.setPullup(0xFF);                               //enable pullups
+    mcp.digitalWrite(BDD1_POL_GPIO, BDD1_DEFAULT_POL); //default polarity BDD1
+    mcp.digitalWrite(BDD2_POL_GPIO, BDD2_DEFAULT_POL); //default polarity BDD2
 
     /*
     while (1)
@@ -151,32 +166,50 @@ extern "C" void app_main(void)
         printf("BBD reset");
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
-    */
-
+   
     lastPol_BDD1 = esp_timer_get_time();
     lastPol_BDD2 = esp_timer_get_time();
+    */
 
     while (true)
     {
+        //printf("im OK");
         //inaMeasure();
-        polTime_BDD1();
-        polTime_BDD2();
+        //polTime_BDD1();
+        //polTime_BDD2();
         // Duty_BDD1();
         // Duty_BDD2();
         //Blink();
+        Duty_FOR();
         //pwm.setDuty(0.5);
-        
-        for (float i = 0; i <= 100 ; i++)
-        {
-            float duty = i/100;
+        /*
 
-            pwm.setDuty(duty);
+        for (float i = 0; i <= 100; i=i+10)
+        {
+            float duty = i / 100;
+
+            pwm_BDD1.setDuty(duty);
+            pwm_BDD2.setDuty(duty);
+            //pwm_LED.setDuty(duty);
             printf("pwmDuty %.2f\n", duty);
-            vTaskDelay(100 / portTICK_RATE_MS);
+            vTaskDelay(500 / portTICK_RATE_MS);
             //pwm.pwmOut(LED_GPIO,0,10,BDD1_PWM_FREQ);
         }
-        
-        vTaskDelay(100 / portTICK_RATE_MS);
+        */
 
+       /*
+        printf("im ON\n");
+        gpio_set_level(LED_GPIO, 1);
+        //gpio_set_level(BDD1_Duty, 1);
+        //gpio_set_level(BDD2_Duty, 1);
+        vTaskDelay(1000 / portTICK_RATE_MS);
+        printf("im OFF\n");
+        gpio_set_level(LED_GPIO, 0);
+        //gpio_set_level(BDD1_Duty, 0);
+        //gpio_set_level(BDD2_Duty, 0);
+        vTaskDelay(1000 / portTICK_RATE_MS);
+        */
+       vTaskDelay(100 / portTICK_RATE_MS);
     } //while (true)
 }
+
