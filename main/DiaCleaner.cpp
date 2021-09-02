@@ -13,7 +13,7 @@
 */
 //LED
 #define LED_GPIO GPIO_NUM_2
-#define LED_blink_time 1 //s
+#define Blink_time 1 //s
 #define LED_PWM_FREQ 5000 //Hz
 #define BDD1_Duty GPIO_NUM_26
 #define BDD2_Duty 
@@ -47,17 +47,23 @@
 #define BDD2_DUTY_GPIO GPIO_NUM_27
 #define BDD2_DEFAULT_POL NEGATIVE
 
+//Rele config
+#define Rele1   3
+#define Rele2   2
+#define Rele3   1
+#define Rele4   0
+
 //static int64_t lastMeasure = 0;
 static int64_t lastPol_BDD1 = 0;
 static int64_t lastPol_BDD2 = 0;
 static int64_t lastDuty_BDD1 = 0;
 static int64_t lastDuty_BDD2 = 0;
-static int64_t lastLED_state = 0;
+static int64_t lastBlink_state = 0;
 static bool polarity_BDD1 = BDD1_DEFAULT_POL;
 static bool polarity_BDD2 = BDD2_DEFAULT_POL;
 static bool Duty_polBDD1 = 0;
 static bool Duty_polBDD2 = 0;
-static bool LED_state = 0;
+static bool Blink_state = 0;
 
 mcp23009 mcp; //initialize mcp object
 
@@ -68,14 +74,15 @@ pwmOut pwm_BDD2(BDD2_DUTY_GPIO, LEDC_CHANNEL_1, LEDC_TIMER_1, BDD2_PWM_FREQ);
 void Blink()
 {
 
-    if ((esp_timer_get_time() - lastLED_state) >= (LED_blink_time * S_TO_US))
+    if ((esp_timer_get_time() - lastBlink_state) >= (Blink_time * S_TO_US))
     {
-        LED_state = !LED_state;
-        gpio_set_level(LED_GPIO, LED_state);
-        printf("im OK %d\n", LED_state);
-        gpio_set_level(BDD1_DUTY_GPIO, LED_state);
-        gpio_set_level(BDD2_DUTY_GPIO, LED_state);
-        lastLED_state = esp_timer_get_time();
+        Blink_state = !Blink_state;
+        gpio_set_level(LED_GPIO, Blink_state);
+        printf("im OK %d\n", Blink_state);
+        //gpio_set_level(BDD1_DUTY_GPIO, LED_state);
+        //gpio_set_level(BDD2_DUTY_GPIO, LED_state);
+        mcp.digitalWrite(Rele4, Blink_state);
+        lastBlink_state = esp_timer_get_time();
     }
 }
 
@@ -145,7 +152,7 @@ extern "C" void app_main(void)
         .mcp_addr = 0x20, //address of mcp23009
     };
 
-    mcp_conf.i2c_conf.master.clk_speed = 100000; //clk speed
+    mcp_conf.i2c_conf.master.clk_speed = 10000; //clk speed
 
     //polInit
     mcp.init(&mcp_conf);                               //initializes variables and reads all registers
@@ -179,8 +186,8 @@ extern "C" void app_main(void)
         //polTime_BDD2();
         // Duty_BDD1();
         // Duty_BDD2();
-        //Blink();
-        Duty_FOR();
+        Blink();
+        //Duty_FOR();
         //pwm.setDuty(0.5);
         /*
 
